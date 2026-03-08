@@ -69,78 +69,48 @@ export const generateMealPlan = async (req, res) => {
     const userId = req.user.id;
 
     const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    const targetCalories = user.targetCalories || 2000;
     if (!user.targetCalories) {
+      user.targetCalories = targetCalories;
+      await user.save();
+    }
+
+    const userObj = user.toObject ? user.toObject() : { ...user, preferences: user.preferences };
+    const fallbackPlan = await generateFallbackMealPlan({ ...userObj, targetCalories });
+
+    if (!fallbackPlan.meals || fallbackPlan.meals.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Please calculate your calorie requirements first'
+        message: 'No foods in database. Please run: cd server && npm run seed'
       });
     }
 
-    // Call ML service for meal plan generation
-    try {
-      const mlResponse = await axios.post(`${process.env.ML_API_URL}/generate-meal-plan`, {
-        target_calories: user.targetCalories,
-        preferences: user.preferences,
-        dietary_restrictions: user.dietaryRestrictions,
-        allergies: user.allergies,
-        goal: user.goal,
-        type: type
-      });
+    const mealPlan = await MealPlan.create({
+      user: userId,
+      date: date ? new Date(date) : new Date(),
+      type: type,
+      meals: fallbackPlan.meals,
+      totalCalories: fallbackPlan.totalCalories,
+      totalProtein: fallbackPlan.totalProtein,
+      totalCarbs: fallbackPlan.totalCarbs,
+      totalFats: fallbackPlan.totalFats,
+      targetCalories
+    });
 
-      const mealPlanData = mlResponse.data;
+    await mealPlan.populate({
+      path: 'meals.foods.food',
+      model: 'Food'
+    });
 
-      // Save meal plan to database
-      const mealPlan = await MealPlan.create({
-        user: userId,
-        date: date ? new Date(date) : new Date(),
-        type: type,
-        meals: mealPlanData.meals,
-        totalCalories: mealPlanData.total_calories,
-        totalProtein: mealPlanData.total_protein,
-        totalCarbs: mealPlanData.total_carbs,
-        totalFats: mealPlanData.total_fats,
-        targetCalories: user.targetCalories
-      });
-
-      // Populate food details
-      await mealPlan.populate({
-        path: 'meals.foods.food',
-        model: 'Food'
-      });
-
-      res.json({
-        success: true,
-        data: mealPlan
-      });
-    } catch (mlError) {
-      // Fallback to rule-based meal plan if ML service fails
-      console.error('ML service error, using fallback:', mlError.message);
-      
-      const fallbackPlan = await generateFallbackMealPlan(user);
-      const mealPlan = await MealPlan.create({
-        user: userId,
-        date: date ? new Date(date) : new Date(),
-        type: type,
-        meals: fallbackPlan.meals,
-        totalCalories: fallbackPlan.totalCalories,
-        totalProtein: fallbackPlan.totalProtein,
-        totalCarbs: fallbackPlan.totalCarbs,
-        totalFats: fallbackPlan.totalFats,
-        targetCalories: user.targetCalories
-      });
-
-      await mealPlan.populate({
-        path: 'meals.foods.food',
-        model: 'Food'
-      });
-
-      res.json({
-        success: true,
-        data: mealPlan,
-        note: 'Generated using fallback algorithm'
-      });
-    }
+    res.json({
+      success: true,
+      data: mealPlan
+    });
   } catch (error) {
+    console.error('Generate meal plan error:', error);
     res.status(500).json({
       success: false,
       message: error.message || 'Error generating meal plan'
@@ -148,9 +118,9 @@ export const generateMealPlan = async (req, res) => {
   }
 };
 
-// Fallback meal plan generator
+// Fallback meal plan generator (uses MongoDB foods)
 const generateFallbackMealPlan = async (user) => {
-  const targetCalories = user.targetCalories;
+  const targetCalories = user.targetCalories || 2000;
   const caloriesPerMeal = {
     breakfast: targetCalories * 0.25,
     lunch: targetCalories * 0.35,
@@ -163,39 +133,46 @@ const generateFallbackMealPlan = async (user) => {
 
   for (const mealType of mealTypes) {
     const query = {
-      category: mealType,
       isActive: true,
-      calories: { $lte: caloriesPerMeal[mealType] * 1.5 }
+      calories: { $lte: caloriesPerMeal[mealType] * 2 }
     };
+    // Prefer category match first
+    const categoryQuery = { ...query, category: mealType };
+    let foods = await Food.find(categoryQuery).limit(5);
+
+    if (foods.length === 0) {
+      foods = await Food.find(query).limit(5);
+    }
 
     if (user.preferences?.vegetarian) {
-      query.vegetarian = true;
+      foods = foods.filter(f => f.vegetarian);
     }
     if (user.preferences?.vegan) {
-      query.vegan = true;
+      foods = foods.filter(f => f.vegan);
+    }
+    if (foods.length === 0) {
+      foods = await Food.find({ isActive: true }).limit(5);
     }
 
-    const foods = await Food.find(query).limit(3);
-    
     if (foods.length > 0) {
       const selectedFoods = foods.slice(0, 2).map(food => ({
         food: food._id,
         quantity: 1,
-        servingSize: food.servingSize
+        servingSize: food.servingSize || '100g'
       }));
 
-      const totalCalories = selectedFoods.reduce((sum, item) => {
-        const food = foods.find(f => f._id.toString() === item.food.toString());
-        return sum + (food ? food.calories : 0);
+      const mealCalories = selectedFoods.reduce((sum, item) => {
+        const f = foods.find(x => x._id.toString() === item.food.toString());
+        return sum + (f ? f.calories : 0);
       }, 0);
 
       meals.push({
         mealType,
         foods: selectedFoods,
-        totalCalories,
-        totalProtein: foods.reduce((sum, f) => sum + f.protein, 0),
-        totalCarbs: foods.reduce((sum, f) => sum + f.carbs, 0),
-        totalFats: foods.reduce((sum, f) => sum + f.fats, 0)
+        totalCalories: mealCalories,
+        totalProtein: foods.slice(0, 2).reduce((s, f) => s + f.protein, 0),
+        totalCarbs: foods.slice(0, 2).reduce((s, f) => s + f.carbs, 0),
+        totalFats: foods.slice(0, 2).reduce((s, f) => s + f.fats, 0)
       });
     }
   }

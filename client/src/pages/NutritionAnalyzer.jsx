@@ -14,22 +14,30 @@ const NutritionAnalyzer = () => {
     if (!searchTerm.trim()) return
 
     setLoading(true)
+    setSearchResults([])
+    setAnalysis(null)
     try {
-      const response = await api.get(`/food/search?item=${searchTerm}&limit=10`)
-      setSearchResults(response.data.data)
+      const response = await api.get(`/food/search?item=${encodeURIComponent(searchTerm.trim())}&limit=10`)
+      const data = response.data?.data
+      setSearchResults(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Error searching:', error)
+      setSearchResults([])
     } finally {
       setLoading(false)
     }
   }
 
   const handleAnalyze = async (foodId) => {
+    if (!foodId) return
     setLoading(true)
     try {
       const response = await api.post('/food/nutrition', { foodId, quantity: 1 })
-      setAnalysis(response.data.data)
-      setSelectedFood(response.data.data.food)
+      const data = response.data?.data
+      if (data) {
+        setAnalysis(data)
+        setSelectedFood(data.food)
+      }
     } catch (error) {
       console.error('Error analyzing:', error)
     } finally {
@@ -102,8 +110,8 @@ const NutritionAnalyzer = () => {
             <div className="space-y-3 max-h-96 overflow-y-auto">
               {searchResults.map((food) => (
                 <div
-                  key={food._id}
-                  onClick={() => handleAnalyze(food._id)}
+                  key={food._id || food.id}
+                  onClick={() => handleAnalyze(food._id || food.id)}
                   className="p-4 border-2 border-gray-200 rounded-xl cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all duration-300"
                 >
                   <div className="flex justify-between items-start">
@@ -122,7 +130,7 @@ const NutritionAnalyzer = () => {
           ) : (
             <div className="text-center py-8 text-gray-500">
               <Search className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-              <p>Search for food items to see results</p>
+              <p>{searchTerm.trim() ? 'No food items found. Try "apple", "chicken", or "rice"' : 'Search for food items to see results'}</p>
             </div>
           )}
         </motion.div>

@@ -14,12 +14,15 @@ const MealPlanner = () => {
 
   const generateMealPlan = async () => {
     setLoading(true)
+    setMealPlan(null)
     try {
       const response = await api.post('/diet/generate-plan', { date, type: 'daily' })
-      setMealPlan(response.data.data)
+      const data = response.data?.data
+      if (data) setMealPlan(data)
     } catch (error) {
       console.error('Error generating meal plan:', error)
-      alert('Error generating meal plan. Please try again.')
+      const msg = error.response?.data?.message || 'Error generating meal plan. Run seed: cd server && npm run seed'
+      alert(msg)
     } finally {
       setLoading(false)
     }

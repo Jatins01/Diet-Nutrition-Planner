@@ -183,10 +183,30 @@ const FoodScanner = () => {
               )}
 
               {!result.food && result.prediction && (
-                <div className="bg-yellow-50 rounded-xl p-4 border-2 border-yellow-200">
-                  <p className="text-sm text-yellow-800">
-                    Food detected but not found in database. Calorie estimate: {result.prediction.calories || 'N/A'}
-                  </p>
+                <div className="space-y-4">
+                  <div className="bg-amber-50 rounded-xl p-4 border-2 border-amber-200">
+                    <p className="text-sm text-amber-800 font-medium mb-2">
+                      Estimated nutrition for: {result.prediction.food_name}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 mt-3">
+                      <div className="bg-white rounded-lg p-3">
+                        <p className="text-xs text-gray-600">Calories</p>
+                        <p className="text-lg font-bold text-amber-600">{result.prediction.calories || 0}</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-3">
+                        <p className="text-xs text-gray-600">Protein</p>
+                        <p className="text-lg font-bold text-amber-600">{result.prediction.protein || 0}g</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-3">
+                        <p className="text-xs text-gray-600">Carbs</p>
+                        <p className="text-lg font-bold text-amber-600">{result.prediction.carbs || 0}g</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-3">
+                        <p className="text-xs text-gray-600">Fats</p>
+                        <p className="text-lg font-bold text-amber-600">{result.prediction.fats || 0}g</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

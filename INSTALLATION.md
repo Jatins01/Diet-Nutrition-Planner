@@ -177,6 +177,8 @@ JWT_SECRET=your-super-secret-jwt-key
 JWT_EXPIRE=7d
 ML_API_URL=http://localhost:8000
 CORS_ORIGIN=http://localhost:5173
+# Optional: for accurate food image recognition (get free key at https://spoonacular.com/food-api)
+# SPOONACULAR_API_KEY=your_key
 ```
 
 ### Frontend (.env)
